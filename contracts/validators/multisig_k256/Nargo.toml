@@ -1,0 +1,9 @@
+[package]
+name = "multi_sig_k256"
+type = "contract"
+authors = ["porco"]
+compiler_version = ">=0.18.0"
+
+[dependencies]
+aztec = { path = '../../../aztec-nr/aztec' }
+authwit = { path = '../../../aztec-nr/authwit' }

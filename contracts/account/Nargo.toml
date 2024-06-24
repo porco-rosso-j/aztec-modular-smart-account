@@ -1,0 +1,12 @@
+[package]
+name = "kernel_account"
+type = "contract"
+authors = ["porco"]
+compiler_version = ">=0.18.0"
+
+[dependencies]
+aztec = { path = '../../aztec-nr/aztec' }
+authwit = { path = '../../aztec-nr/authwit' }
+value_note = { path = '../../aztec-nr/value-note' }
+address_note = { path = '../../aztec-nr/address-note' }
+helper = { path = '../libs/helper' }

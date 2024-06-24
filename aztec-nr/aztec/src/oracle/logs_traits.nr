@@ -42,6 +42,11 @@ impl LensForEncryptedLog<6, 672> for [Field; 6] {
     fn output_bytes(self) -> [u8; 672] {[self[0] as u8; 672]}
 }
 
+impl LensForEncryptedLog<7, 704> for [Field; 7] {
+    fn output_fields(self) -> [Field; 7] {[self[0]; 7]}
+    fn output_bytes(self) -> [u8; 704] {[self[0] as u8; 704]}
+}
+
 impl LensForEncryptedLog<8, 736> for [Field; 8] {
     fn output_fields(self) -> [Field; 8] {[self[0]; 8]}
     fn output_bytes(self) -> [u8; 736] {[self[0] as u8; 736]}

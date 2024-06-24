@@ -26,7 +26,7 @@ import {
 	Wallet,
 	WrappedFieldLike,
 } from "@aztec/aztec.js";
-import MultisigAccountSchnorrContractArtifactJson from "../../contracts/validators/multisig_schnorr/target/multi_sig_schnorr-MultisigAccountSchnorr.json" assert { type: "json" };
+import MultisigAccountSchnorrContractArtifactJson from "../../contracts/accounts/multisig_schnorr/target/multi_sig_schnorr-MultisigAccountSchnorr.json" assert { type: "json" };
 export const MultisigAccountSchnorrContractArtifact = loadContractArtifact(
 	MultisigAccountSchnorrContractArtifactJson as NoirCompiledContract
 );

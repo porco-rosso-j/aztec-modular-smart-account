@@ -1,99 +1,98 @@
-mod eddsa_public_key_note;
 
-// Account contract that uses EDDSA signatures for authentication on the same curve as Ethereum.
-// The signing key is stored in an immutable private note and should be different from the signing key.
-contract EddsaBjjAccount {
-    use dep::aztec::prelude::{AztecAddress, FunctionSelector, NoteHeader, NoteGetterOptions, PrivateContext, PrivateImmutable};
 
+contract EddsaBjjModule {
+    use dep::aztec::prelude::{AztecAddress, FunctionSelector, NoteHeader, NoteGetterOptions, Map, PrivateContext, PrivateMutable};
+    use dep::authwit::auth_witness::get_auth_witness;
     use dep::aztec::protocol_types::abis::call_context::CallContext;
     use dep::std;
 
-    use dep::authwit::{
-        entrypoint::{app::AppPayload, fee::FeePayload}, account::AccountActions,
-        auth_witness::get_auth_witness
-    };
+    use dep::notes::public_key_note::PublicKeyNote;
+    use dep::helper::{
+        get_viewing_pubkeys, get_viewing_pubkeys_and_npkm_hash, extract_signature_64, u8_to_u8_32, 
+        };
 
-    use crate::eddsa_public_key_note::EddsaPublicKeyNote;
+    use dep::aztec::oracle::debug_log::{debug_log, debug_log_format};
 
     #[aztec(storage)]
     struct Storage {
-        public_key: PrivateImmutable<EddsaPublicKeyNote>,
-    }
-
-    global ACCOUNT_ACTIONS_STORAGE_SLOT = 2;
-
-    // Creates a new account out of an ECDSA public key to use for signature verification
-    #[aztec(private)]
-    #[aztec(initializer)]
-    fn constructor(signing_pub_key_x: Field, signing_pub_key_y: Field) {
-        let this = context.this_address();
-        let header = context.get_header();
-
-        let this_npk_m_hash = header.get_npk_m_hash(&mut context, this);
-        let this_ovpk_m = header.get_ovpk_m(&mut context, context.this_address());
-        let this_ivpk_m = header.get_ivpk_m(&mut context, context.this_address());
-
-        let mut pub_key_note = EddsaPublicKeyNote::new(signing_pub_key_x, signing_pub_key_y, this_npk_m_hash);
-        storage.public_key.initialize(&mut pub_key_note, this_ovpk_m, this_ivpk_m);
-    }
-
-    // Note: If you globally change the entrypoint signature don't forget to update default_entrypoint.ts
-    #[aztec(private)]
-    fn entrypoint(app_payload: AppPayload, fee_payload: FeePayload) {
-        let actions = AccountActions::init(&mut context, ACCOUNT_ACTIONS_STORAGE_SLOT, is_valid_impl);
-        actions.entrypoint(app_payload, fee_payload);
+        public_keys: Map<AztecAddress, PrivateMutable<PublicKeyNote>>,
     }
 
     #[aztec(private)]
-    #[aztec(noinitcheck)]
-    fn spend_private_authwit(inner_hash: Field) -> Field {
-        let actions = AccountActions::init(&mut context, ACCOUNT_ACTIONS_STORAGE_SLOT, is_valid_impl);
-        actions.spend_private_authwit(inner_hash)
-    }
-
-    #[aztec(public)]
-    fn spend_public_authwit(inner_hash: Field) -> Field {
-        let actions = AccountActions::init(&mut context, ACCOUNT_ACTIONS_STORAGE_SLOT, is_valid_impl);
-        actions.spend_public_authwit(inner_hash)
+    fn install(keys: [Field; 500]) {
+        let sender = context.msg_sender();
+        let (ovpk_m, ivpk_m, npk_m_hash) = get_viewing_pubkeys_and_npkm_hash(&mut context, sender);
+        
+        // TODO: assert if already initialized
+        let mut pub_key_note = PublicKeyNote::new(keys[0], keys[1], npk_m_hash);
+        storage.public_keys.at(sender).initialize(&mut pub_key_note, ovpk_m, ivpk_m);
     }
 
     #[aztec(private)]
-    #[aztec(internal)]
-    fn cancel_authwit(outer_hash: Field) {
-        context.push_new_nullifier(outer_hash, 0);
+    fn uninstall() {
+        let sender = context.msg_sender();
+        let (ovpk_m, ivpk_m) = get_viewing_pubkeys(&mut context, sender);
+
+        // TODO: assert if not initialized
+        let mut empty_publickey_note = PublicKeyNote::new(0, 0, 0);
+        storage.public_keys.at(sender).replace(&mut empty_publickey_note, ovpk_m, ivpk_m);
     }
 
-    #[aztec(public)]
-    #[aztec(internal)]
-    fn approve_public_authwit(outer_hash: Field) {
-        let actions = AccountActions::init(&mut context, ACCOUNT_ACTIONS_STORAGE_SLOT, is_valid_impl);
-        actions.approve_public_authwit(outer_hash)
+    #[aztec(private)]
+    fn set_new_public_key(pub_key_x: Field, pub_key_y: Field) {
+        let sender = context.msg_sender();
+        let (ovpk_m, ivpk_m, npk_m_hash) = get_viewing_pubkeys_and_npkm_hash(&mut context, sender);
+
+        // TODO: assert if already initialized
+
+        let mut pub_key_note = PublicKeyNote::new(pub_key_x, pub_key_y, npk_m_hash);
+        storage.public_keys.at(sender).replace(&mut pub_key_note, ovpk_m, ivpk_m);  
     }
 
-    #[contract_library_method]
-    fn is_valid_impl(context: &mut PrivateContext, outer_hash: Field) -> bool {
+    #[aztec(private)]
+    fn validate(mode: Field, outer_hash: Field) -> bool {
         // Load public key from storage
-        let storage = Storage::init(context);
-        let public_key = storage.public_key.get_note();
+        let sender = context.msg_sender();
+        let (ovpk_m, ivpk_m) = get_viewing_pubkeys(&mut context, sender);
 
+        let public_key: PublicKeyNote = storage.public_keys.at(sender).get_note(ovpk_m, ivpk_m);
         // Load auth witness
-        let witness: [Field; 3] = get_auth_witness(outer_hash);
-        let signature_s = witness[0];
-        let signature_r8_x = witness[1];
-        let signature_r8_y = witness[2];
+        let witness: [Field; 500] = get_auth_witness(outer_hash);
 
-        // TODO: make sure that outer_hash == msg?
-        let verification = std::eddsa::eddsa_poseidon_verify(
+        let mode = witness[0];
+
+        let mut signature_s = 0;
+        let mut signature_r8_x = 0;
+        let mut signature_r8_y = 0;
+
+        if mode == 0 {
+            signature_s = witness[1];
+            signature_r8_x = witness[2];
+            signature_r8_y = witness[3];
+        } else if mode == 1 {
+            signature_s = witness[33];
+            signature_r8_x = witness[34];
+            signature_r8_y = witness[35];
+        }
+        
+        // std::schnorr::verify_signature_slice(public_key.x, public_key.y, signature, outer_hash.to_be_bytes(32))
+        std::eddsa::eddsa_poseidon_verify(
             public_key.x, 
             public_key.y, 
             signature_s, 
             signature_r8_x, 
             signature_r8_y, 
             outer_hash
-        );
+        )
+    }
 
-        assert(verification, "Verification Failed");
+    unconstrained fn is_installed(account: AztecAddress) -> pub bool {
+        storage.public_keys.at(account).is_initialized()
+    }
 
-        true
+    unconstrained fn view_public_keys(account: AztecAddress) -> pub (Field, Field) {
+        let note = storage.public_keys.at(account).view_note();
+        (note.x, note.y)
     }
 }
+

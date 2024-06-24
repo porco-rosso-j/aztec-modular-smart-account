@@ -1,0 +1,11 @@
+[package]
+name = "ecdsa_k256_validator"
+type = "contract"
+authors = ["porco"]
+compiler_version = ">=0.18.0"
+
+[dependencies]
+aztec = { path = '../../../aztec-nr/aztec' }
+authwit = { path = '../../../aztec-nr/authwit' }
+helper = { path = '../../libs/helper' }
+notes = { path = '../../libs/notes' }

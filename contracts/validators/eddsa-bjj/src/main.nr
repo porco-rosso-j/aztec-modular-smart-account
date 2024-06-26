@@ -90,9 +90,9 @@ contract EddsaBjjModule {
         storage.public_keys.at(account).is_initialized()
     }
 
-    unconstrained fn view_public_keys(account: AztecAddress) -> pub (Field, Field) {
+    unconstrained fn view_public_keys(account: AztecAddress) -> pub [Field;2] {
         let note = storage.public_keys.at(account).view_note();
-        (note.x, note.y)
+        [note.x, note.y]
     }
 }
 

@@ -37,10 +37,6 @@ contract KernelAccount {
     #[aztec(private)]
     #[aztec(initializer)]
     fn constructor(default_validator: AztecAddress, signing_pubkeys:[Field; INSTALL_KEYS_LEN]) {
-        debug_log("constructor");
-        debug_log_format("default_validator {0}", [default_validator.to_field()]);
-        debug_log_format("signing_pubkeys[0] {0}", [signing_pubkeys[0]]);
-        debug_log_format("signing_pubkeys[1] {0}", [signing_pubkeys[1]]);
         let header = context.get_header();
         let this = context.this_address();
         let (ovpk_m, ivpk_m, npk_m_hash) = get_viewing_pubkeys_and_npkm_hash(&mut context, this);
@@ -127,12 +123,6 @@ contract KernelAccount {
 
     #[aztec(private)]
     fn install_validator(validator_address: AztecAddress, signing_pubkeys:[Field; INSTALL_KEYS_LEN]) {
-
-        debug_log("ecdsa install");
-        debug_log_format("validator_address {0}", [validator_address.to_field()]);
-        debug_log_format("signing_pubkeys[0] {0}", [signing_pubkeys[0]]);
-        debug_log_format("signing_pubkeys[1] {0}", [signing_pubkeys[1]]);
-
         let (ovpk_m, ivpk_m, npk_m_hash) = get_viewing_pubkeys_and_npkm_hash(&mut context, context.this_address());
 
         let mut validator = ValidatorNote::new(validator_address, true, npk_m_hash);
@@ -168,6 +158,10 @@ contract KernelAccount {
 
     unconstrained fn is_validator_installed(validator: AztecAddress) -> pub bool {
         storage.validators.at(validator).view_note().enabled
+    }
+
+    unconstrained fn get_default_validator() -> pub Field {
+        storage.default_validator.view_note().address.to_field()
     }
 
 }

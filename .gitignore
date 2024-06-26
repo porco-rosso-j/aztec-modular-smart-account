@@ -4,3 +4,5 @@ yarn-error.log
 trash
 contracts/**/*/*.json.bak
 output.json
+test/test.test.ts
+note.md

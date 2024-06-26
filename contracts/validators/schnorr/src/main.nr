@@ -28,17 +28,6 @@ contract SchnorrModule {
         storage.public_keys.at(sender).initialize(&mut pub_key_note, ovpk_m, ivpk_m);
     }
 
-    // #[aztec(private)]
-    // fn install(public_key_x: Field, public_key_y:Field) {
-    //     let sender = context.msg_sender();
-    //     let (ovpk_m, ivpk_m, npk_m_hash) = get_viewing_pubkeys_and_npkm_hash(&mut context, sender);
-
-    //     // TODO: assert if already initialized
-    //     let mut pub_key_note = PublicKeyNote::new(public_key_x, public_key_y, npk_m_hash);
-    //     storage.public_keys.at(sender).initialize(&mut pub_key_note, ovpk_m, ivpk_m);
-    // }
-
-
     #[aztec(private)]
     fn uninstall() {
         let sender = context.msg_sender();
@@ -86,9 +75,9 @@ contract SchnorrModule {
         storage.public_keys.at(account).is_initialized()
     }
 
-    unconstrained fn view_public_keys(account: AztecAddress) -> pub (Field, Field) {
+    unconstrained fn view_public_keys(account: AztecAddress) -> pub [Field;2] {
         let note = storage.public_keys.at(account).view_note();
-        (note.x, note.y)
+        [note.x, note.y]
     }
 }
 

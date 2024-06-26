@@ -114,36 +114,31 @@ export class SchnorrModuleContract extends ContractBase {
 		} as ContractStorageLayout<"public_keys">;
 	}
 
-	public static get notes(): ContractNotes<"PublicKeyNote"> {
+	public static get notes(): ContractNotes<
+		"EcdsaPublicKeyNote" | "PublicKeyNote"
+	> {
 		return {
+			EcdsaPublicKeyNote: {
+				id: new Fr(6999100115978011798108105997510112178111116101n),
+			},
 			PublicKeyNote: {
 				id: new Fr(8011798108105997510112178111116101n),
 			},
-		} as ContractNotes<"PublicKeyNote">;
+		} as ContractNotes<"EcdsaPublicKeyNote" | "PublicKeyNote">;
 	}
 
 	/** Type-safe wrappers for the public methods exposed by the contract. */
-	//@ts-ignore
+	// @ts-ignore
 	public override methods!: {
-		/** install(keys: array) */
-		install: ((keys: FieldLike[]) => ContractFunctionInteraction) &
-			Pick<ContractMethod, "selector">;
-
-		/** set_new_public_key(pub_key_x: field, pub_key_y: field) */
-		set_new_public_key: ((
-			pub_key_x: FieldLike,
-			pub_key_y: FieldLike
+		/** validate(mode: field, outer_hash: field) */
+		validate: ((
+			mode: FieldLike,
+			outer_hash: FieldLike
 		) => ContractFunctionInteraction) &
 			Pick<ContractMethod, "selector">;
 
 		/** is_installed(account: struct) */
 		is_installed: ((account: AztecAddressLike) => ContractFunctionInteraction) &
-			Pick<ContractMethod, "selector">;
-
-		/** view_public_keys(account: struct) */
-		view_public_keys: ((
-			account: AztecAddressLike
-		) => ContractFunctionInteraction) &
 			Pick<ContractMethod, "selector">;
 
 		/** compute_note_hash_and_nullifier(contract_address: struct, nonce: field, storage_slot: field, note_type_id: field, serialized_note: array) */
@@ -156,15 +151,25 @@ export class SchnorrModuleContract extends ContractBase {
 		) => ContractFunctionInteraction) &
 			Pick<ContractMethod, "selector">;
 
-		/** validate(mode: field, outer_hash: field) */
-		validate: ((
-			mode: FieldLike,
-			outer_hash: FieldLike
-		) => ContractFunctionInteraction) &
+		/** install(keys: array) */
+		install: ((keys: FieldLike[]) => ContractFunctionInteraction) &
 			Pick<ContractMethod, "selector">;
 
 		/** uninstall() */
 		uninstall: (() => ContractFunctionInteraction) &
+			Pick<ContractMethod, "selector">;
+
+		/** set_new_public_key(pub_key_x: field, pub_key_y: field) */
+		set_new_public_key: ((
+			pub_key_x: FieldLike,
+			pub_key_y: FieldLike
+		) => ContractFunctionInteraction) &
+			Pick<ContractMethod, "selector">;
+
+		/** view_public_keys(account: struct) */
+		view_public_keys: ((
+			account: AztecAddressLike
+		) => ContractFunctionInteraction) &
 			Pick<ContractMethod, "selector">;
 	};
 }

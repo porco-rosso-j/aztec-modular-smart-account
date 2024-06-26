@@ -68,6 +68,17 @@ pub fn u8_to_u8_32(arr: [u8]) -> [u8; 32] {
     as_field
 }
 
+pub fn concat_u8_32(arr1: [u8; 32], arr2: [u8; 32]) -> [u8; 64] {
+    let mut array: [u8; 64] = [0 as u8; 64];
+    for i in 0..32 {
+        array[i] = arr1[i];
+        array[i + 32] = arr2[i];
+    }
+    array
+}
+
+
+
 #[test]
 fn test_extract_signature_64() {
     // mode 0

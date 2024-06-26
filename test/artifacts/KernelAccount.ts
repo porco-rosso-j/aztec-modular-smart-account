@@ -152,52 +152,6 @@ export class KernelAccountContract extends ContractBase {
 	/** Type-safe wrappers for the public methods exposed by the contract. */
 	// @ts-ignore
 	public override methods!: {
-		/** get_nonce() */
-		get_nonce: (() => ContractFunctionInteraction) &
-			Pick<ContractMethod, "selector">;
-
-		/** spend_public_authwit(inner_hash: field) */
-		spend_public_authwit: ((
-			inner_hash: FieldLike
-		) => ContractFunctionInteraction) &
-			Pick<ContractMethod, "selector">;
-
-		/** compute_note_hash_and_nullifier(contract_address: struct, nonce: field, storage_slot: field, note_type_id: field, serialized_note: array) */
-		compute_note_hash_and_nullifier: ((
-			contract_address: AztecAddressLike,
-			nonce: FieldLike,
-			storage_slot: FieldLike,
-			note_type_id: FieldLike,
-			serialized_note: FieldLike[]
-		) => ContractFunctionInteraction) &
-			Pick<ContractMethod, "selector">;
-
-		/** constructor(default_validator: struct, signing_pubkeys: array) */
-		constructor: ((
-			default_validator: AztecAddressLike,
-			signing_pubkeys: FieldLike[]
-		) => ContractFunctionInteraction) &
-			Pick<ContractMethod, "selector">;
-
-		/** spend_private_authwit(inner_hash: field) */
-		spend_private_authwit: ((
-			inner_hash: FieldLike
-		) => ContractFunctionInteraction) &
-			Pick<ContractMethod, "selector">;
-
-		/** uninstall_validator(validator_address: struct) */
-		uninstall_validator: ((
-			validator_address: AztecAddressLike
-		) => ContractFunctionInteraction) &
-			Pick<ContractMethod, "selector">;
-
-		/** install_validator(validator_address: struct, signing_pubkeys: array) */
-		install_validator: ((
-			validator_address: AztecAddressLike,
-			signing_pubkeys: FieldLike[]
-		) => ContractFunctionInteraction) &
-			Pick<ContractMethod, "selector">;
-
 		/** entrypoint(app_payload: struct, fee_payload: struct) */
 		entrypoint: ((
 			app_payload: {
@@ -227,6 +181,56 @@ export class KernelAccountContract extends ContractBase {
 		/** is_validator_installed(validator: struct) */
 		is_validator_installed: ((
 			validator: AztecAddressLike
+		) => ContractFunctionInteraction) &
+			Pick<ContractMethod, "selector">;
+
+		/** constructor(default_validator: struct, signing_pubkeys: array) */
+		constructor: ((
+			default_validator: AztecAddressLike,
+			signing_pubkeys: FieldLike[]
+		) => ContractFunctionInteraction) &
+			Pick<ContractMethod, "selector">;
+
+		/** install_validator(validator_address: struct, signing_pubkeys: array) */
+		install_validator: ((
+			validator_address: AztecAddressLike,
+			signing_pubkeys: FieldLike[]
+		) => ContractFunctionInteraction) &
+			Pick<ContractMethod, "selector">;
+
+		/** get_nonce() */
+		get_nonce: (() => ContractFunctionInteraction) &
+			Pick<ContractMethod, "selector">;
+
+		/** spend_public_authwit(inner_hash: field) */
+		spend_public_authwit: ((
+			inner_hash: FieldLike
+		) => ContractFunctionInteraction) &
+			Pick<ContractMethod, "selector">;
+
+		/** spend_private_authwit(inner_hash: field) */
+		spend_private_authwit: ((
+			inner_hash: FieldLike
+		) => ContractFunctionInteraction) &
+			Pick<ContractMethod, "selector">;
+
+		/** get_default_validator() */
+		get_default_validator: (() => ContractFunctionInteraction) &
+			Pick<ContractMethod, "selector">;
+
+		/** compute_note_hash_and_nullifier(contract_address: struct, nonce: field, storage_slot: field, note_type_id: field, serialized_note: array) */
+		compute_note_hash_and_nullifier: ((
+			contract_address: AztecAddressLike,
+			nonce: FieldLike,
+			storage_slot: FieldLike,
+			note_type_id: FieldLike,
+			serialized_note: FieldLike[]
+		) => ContractFunctionInteraction) &
+			Pick<ContractMethod, "selector">;
+
+		/** uninstall_validator(validator_address: struct) */
+		uninstall_validator: ((
+			validator_address: AztecAddressLike
 		) => ContractFunctionInteraction) &
 			Pick<ContractMethod, "selector">;
 	};

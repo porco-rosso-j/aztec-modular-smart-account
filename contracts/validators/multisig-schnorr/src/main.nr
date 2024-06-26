@@ -1,6 +1,6 @@
 mod multisig_note;
 
-global MAX_WITNESS_NOTE_LEN: Field = 327;
+global MAX_WITNESS_LEN: Field = 500;
 
 contract MultisigSchnorrModule {
     use dep::aztec::prelude::{AztecAddress, FunctionSelector, NoteHeader, NoteGetterOptions, Map, PrivateContext, PrivateMutable};
@@ -15,7 +15,7 @@ contract MultisigSchnorrModule {
 
     use dep::aztec::oracle::debug_log::{debug_log, debug_log_format};
     use crate::multisig_note::{MultiSigNote, MAX_MULTISIG_OWNERS};
-    use crate::MAX_WITNESS_NOTE_LEN;
+    use crate::MAX_WITNESS_LEN;
 
     #[aztec(storage)]
     struct Storage {
@@ -35,6 +35,8 @@ contract MultisigSchnorrModule {
         // TODO: assert if already initialized
 
         let signer_count = keys[0];
+        debug_log_format("signer_count {0}", [signer_count as Field]);
+
         let thresdhold = keys[1] as u8;
 
         assert(signer_count as u8 >= thresdhold, "thresdhold greater than signer_count");
@@ -43,18 +45,19 @@ contract MultisigSchnorrModule {
         let mut owners: [AztecAddress; MAX_MULTISIG_OWNERS] = [AztecAddress::zero(); MAX_MULTISIG_OWNERS];
 
         // iterate keys to store all ower & keys
-        let mut base_index: u8 = 2;
+        let mut base_owner_index: u8 = 2;
+        let mut key_index: u8 = 7;
         for i in 0..MAX_MULTISIG_OWNERS as u8 {
             if i as u8 < signer_count as u8 {
-                owners[i] = AztecAddress::from_field(keys[base_index]);
-                let key_index: u8 = base_index + 5;
+                owners[i] = AztecAddress::from_field(keys[base_owner_index]);
+                debug_log_format("owner i {0}", [owners[i].to_field()]);
 
-                if key_index % 2 == 0 {
-                    let mut pub_key_note = PublicKeyNote::new(keys[key_index], keys[key_index + 1], npk_m_hash);
-                    storage.signer_public_keys.at(sender).at(owners[i]).initialize(&mut pub_key_note, ovpk_m, ivpk_m);
-                }
+                debug_log_format("key_index {0}", [key_index as Field]);
+                let mut pub_key_note = PublicKeyNote::new(keys[key_index], keys[key_index + 1], npk_m_hash);
+                storage.signer_public_keys.at(sender).at(owners[i]).initialize(&mut pub_key_note, ovpk_m, ivpk_m);
 
-                base_index = base_index + 1;
+                base_owner_index = base_owner_index + 1;
+                key_index = key_index + 2;
             }
         }
 
@@ -101,8 +104,11 @@ contract MultisigSchnorrModule {
     // index 1: signer len
     // index 2~6: owners
     // index 7~: 64 * N signatures
+    // todo: when not default: there is address at index 1
+    // todo: prevent double-spend
     #[aztec(private)]
     fn validate(mode: Field, outer_hash: Field) -> bool {
+        debug_log("validate");
 
         // Load public key from storage
         let sender = context.msg_sender();
@@ -111,23 +117,25 @@ contract MultisigSchnorrModule {
         let owners = multisig_note.owners;
 
         let mut auth_count: u8 = 0;
-        let witness: [Field; MAX_WITNESS_NOTE_LEN] = get_auth_witness(outer_hash);
+        let witness: [Field; MAX_WITNESS_LEN] = get_auth_witness(outer_hash);
         let signer_len = witness[1];
         assert(signer_len as u8 >= multisig_note.threshold, "insufficient signer_len");
 
         let account_to_owners = storage.signer_public_keys.at(sender);
 
         for i in 0..MAX_MULTISIG_OWNERS as u32 {
-            // debug_log_format("i {0}", [i as Field]);
+            debug_log_format("i {0}", [i as Field]);
 
             let mut base_index: u32 = i * 65 + 2;
-            // debug_log_format("base_index {0}", [base_index as Field]);
+            debug_log_format("base_index {0}", [base_index as Field]);
 
             let owner_index = witness[base_index] as u32; 
-            // debug_log_format("owner_index {0}", [owner_index as Field]);
+            debug_log_format("owner_index {0}", [owner_index as Field]);
 
             if (i < signer_len as u32) & (owner_index < MAX_MULTISIG_OWNERS as u32) & (owners[owner_index] != AztecAddress::zero()) {
-                // debug_log("getting public_key note");
+                debug_log("getting public_key note");
+                debug_log_format("owner i {0}", [owners[owner_index].to_field()]);
+
                 let public_key = account_to_owners.at(owners[owner_index]).get_note(ovpk_m, ivpk_m);
                 
                 let mut signature: [u8; 64] = [0; 64];
@@ -145,8 +153,6 @@ contract MultisigSchnorrModule {
                    outer_hash.to_be_bytes(32)
                );
 
-               // debug_log_format("result: {0}", [result as Field]);
-
                if result {
                    auth_count += 1;
                    // TODO: break if count >= treshold
@@ -163,9 +169,26 @@ contract MultisigSchnorrModule {
         storage.multisig_notes.at(account).is_initialized()
     }
 
-    unconstrained fn view_public_keys(account: AztecAddress, owners: AztecAddress) -> pub (Field, Field) {
+    unconstrained fn get_multisig_note(account: AztecAddress) -> pub MultiSigNote {
+        storage.multisig_notes.at(account).view_note()
+    }
+
+    unconstrained fn get_threshold(account: AztecAddress) -> pub u8 {
+        storage.multisig_notes.at(account).view_note().threshold
+    }
+
+    unconstrained fn get_owners(account: AztecAddress) -> pub [Field;MAX_MULTISIG_OWNERS] {
+        let owners = storage.multisig_notes.at(account).view_note().owners;
+        let mut owners_field : [Field; MAX_MULTISIG_OWNERS] = [0; MAX_MULTISIG_OWNERS];
+        for i in 0..owners.len() {
+            owners_field[i] = owners[i].to_field();
+        }
+        owners_field
+    }
+
+    unconstrained fn view_public_keys(account: AztecAddress, owners: AztecAddress) -> pub [Field;2] {
         let note = storage.signer_public_keys.at(account).at(owners).view_note();
-        (note.x, note.y)
+        [note.x, note.y]
     }
 }
 

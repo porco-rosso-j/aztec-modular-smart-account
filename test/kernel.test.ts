@@ -5,21 +5,32 @@ import {
 	createPXEClient,
 	initAztecJs,
 	AccountWalletWithSecretKey,
+	Schnorr,
+	TxStatus,
 } from "@aztec/aztec.js";
 import { Fq } from "@aztec/circuits.js";
+import { Ecdsa } from "@aztec/circuits.js/barretenberg";
 import { getDeployedTestAccountsWallets } from "@aztec/accounts/testing";
 import { CounterContract } from "@aztec/noir-contracts.js";
-import { SANDBOX_URL, TIMEOUT } from "./utils/constants.js";
-import { ECDSASecp256K1ModuleContract } from "./artifacts/ECDSASecp256K1Module.js";
-import { SchnorrModuleContract } from "./artifacts/SchnorrModule.js";
-import { EcdsaValidator } from "./kernel-accounts/validators/EcdsaValidator.js";
-import { SchnorrValidator } from "./kernel-accounts/validators/ShnorrValidator.js";
-import { deployAndGetKernelAccountWallet } from "./kernel-accounts/index.js";
-import { KernelAccountWalletWithSecretKey } from "./kernel-accounts/KernelAccountWallet.js";
-import { KernelAuthWitnessProvider } from "./kernel-accounts/validators/KernelAuthWitnessProvider.js";
+import { SANDBOX_URL, TIMEOUT } from "./constants.js";
+import {
+	deployAndGetKernelAccountWallet,
+	KernelAccountWalletWithSecretKey,
+} from "./kernel/index.js";
+import {
+	KernelAccountContract,
+	SchnorrModuleContract,
+	EcdsaK256ModuleContract,
+} from "./artifacts/index.js";
+import {
+	KernelAuthWitnessProvider,
+	EcdsaValidator,
+	SchnorrValidator,
+} from "./kernel/authwit/index.js";
+import { compBigIntArrayAndBuffer } from "./helper.js";
 
 let pxe: PXE;
-let ecdsaValidatorContract: ECDSASecp256K1ModuleContract;
+let ecdsaValidatorContract: EcdsaK256ModuleContract;
 let schnorrValidatorContract: SchnorrModuleContract;
 
 let ecdsaValidator: EcdsaValidator;
@@ -27,18 +38,9 @@ let schnorrValidator: SchnorrValidator;
 
 let deployer: AccountWalletWithSecretKey;
 let kernelAccount: KernelAccountWalletWithSecretKey;
+let kernelAccountContract: KernelAccountContract;
 
 let counter: CounterContract;
-
-// presequities (typescript)
-// - kernel account class that can have multiple auth wit provider
-
-// deploy validators
-// deploy an account and install default validator
-// transact through validator
-
-// install another validator
-// transact with the second validator
 
 beforeAll(async () => {
 	pxe = createPXEClient(SANDBOX_URL);
@@ -48,7 +50,7 @@ beforeAll(async () => {
 
 	// deploy Validators
 	ecdsaValidatorContract = (
-		await ECDSASecp256K1ModuleContract.deploy(deployer).send().wait()
+		await EcdsaK256ModuleContract.deploy(deployer).send().wait()
 	).contract;
 
 	console.log("ecdsaValidator: ", ecdsaValidatorContract.address);
@@ -77,17 +79,10 @@ beforeAll(async () => {
 
 	console.log("kernelAccount: ", kernelAccount.getAddress());
 
-	const isInstalled = await schnorrValidatorContract.methods
-		.is_installed(kernelAccount.getAddress())
-		.simulate();
-
-	console.log("isInstalled: ", isInstalled);
-
-	// const public_keys = await schnorrValidatorContract.methods
-	// 	.view_public_keys(kernelAccount.getAddress())
-	// 	.simulate();
-
-	// console.log("public_keys: ", public_keys);
+	kernelAccountContract = await KernelAccountContract.at(
+		kernelAccount.getAddress(),
+		kernelAccount
+	);
 
 	counter = (
 		await CounterContract.deploy(
@@ -105,21 +100,49 @@ beforeAll(async () => {
 
 describe("E2E Batcher setup", () => {
 	jest.setTimeout(TIMEOUT);
+	it("should successfully installed schnorr validator", async () => {
+		const isInstalled_Acc = await kernelAccountContract.methods
+			.is_validator_installed(schnorrValidatorContract.address)
+			.simulate();
+		expect(isInstalled_Acc).toBe(true);
+
+		const isInstalled_Mod = await schnorrValidatorContract.methods
+			.is_installed(kernelAccount.getAddress())
+			.simulate();
+		expect(isInstalled_Mod).toBe(true);
+
+		const signingPublicKey = new Schnorr().computePublicKey(
+			schnorrValidator.getValidatorSigningKey()
+		);
+
+		const public_keys = await schnorrValidatorContract.methods
+			.view_public_keys(kernelAccount.getAddress())
+			.simulate();
+
+		expect(signingPublicKey.x.toBigInt()).toBe(public_keys[0]);
+		expect(signingPublicKey.y.toBigInt()).toBe(public_keys[1]);
+	});
+
 	it("transact with default validator", async () => {
+		const countBefore = await counter.methods
+			.get_counter(kernelAccount.getAddress())
+			.simulate();
+
 		const tx = await counter
 			.withWallet(kernelAccount)
 			.methods.increment(kernelAccount.getAddress(), kernelAccount.getAddress())
 			.send()
 			.wait();
 
-		console.log("tx: ", tx.txHash.toString());
-		const count = await counter.methods
+		expect(tx.status).toBe(TxStatus.SUCCESS);
+
+		const countAfter = await counter.methods
 			.get_counter(kernelAccount.getAddress())
 			.simulate();
-		console.log("count: ", count);
+		expect(countAfter).toBe(countBefore + 1n);
 	});
 
-	it("install and transact with a custom validator ", async () => {
+	it("install and transact with a custom validator: ecdsa k256 ", async () => {
 		const ecdsaSigningKey = new Fr(
 			Fr.random().toBigInt() % Fr.MODULUS
 		).toBuffer();
@@ -135,16 +158,45 @@ describe("E2E Batcher setup", () => {
 			.send()
 			.wait();
 
-		console.log("installTx: ", installTx);
+		expect(installTx.status).toBe(TxStatus.SUCCESS);
 
-		const isInstalled = await ecdsaValidatorContract.methods
+		const isInstalled_Acc = await kernelAccountContract.methods
+			.is_validator_installed(ecdsaValidatorContract.address)
+			.simulate();
+		expect(isInstalled_Acc).toBe(true);
+
+		const isInstalled_Mod = await ecdsaValidatorContract.methods
 			.is_installed(kernelAccount.getAddress())
 			.simulate();
+		expect(isInstalled_Mod).toBe(true);
 
-		console.log("isInstalled: ", isInstalled);
+		const signingPublicKey = new Ecdsa().computePublicKey(ecdsaSigningKey);
+		const public_keys: bigint[] = await ecdsaValidatorContract.methods
+			.view_public_keys(kernelAccount.getAddress())
+			.simulate();
+
+		console.log("public_keys: ", public_keys);
+		console.log("signingPublicKey:", signingPublicKey);
+
+		expect(
+			compBigIntArrayAndBuffer(
+				public_keys.slice(0, 32),
+				signingPublicKey.subarray(0, 32)
+			)
+		).toBe(true);
+		expect(
+			compBigIntArrayAndBuffer(
+				public_keys.slice(32, 64),
+				signingPublicKey.subarray(32, 64)
+			)
+		).toBe(true);
 
 		// switch validator
 		kernelAccount.switchValidator(ecdsaValidator);
+
+		const countBefore = await counter.methods
+			.get_counter(kernelAccount.getAddress())
+			.simulate();
 
 		const tx = await counter
 			.withWallet(kernelAccount)
@@ -152,11 +204,11 @@ describe("E2E Batcher setup", () => {
 			.send()
 			.wait();
 
-		console.log("tx: ", tx.txHash.toString());
+		expect(tx.status).toBe(TxStatus.SUCCESS);
 
-		const count = await counter.methods
+		const countAfter = await counter.methods
 			.get_counter(kernelAccount.getAddress())
 			.simulate();
-		console.log("count: ", count);
+		expect(countAfter).toBe(countBefore + 1n);
 	});
 });

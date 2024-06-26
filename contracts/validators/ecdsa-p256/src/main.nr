@@ -9,7 +9,7 @@ contract EcdsaP256Module {
 
     use dep::notes::ecdsa_public_key_note::EcdsaPublicKeyNote;
     use dep::helper::{
-        get_viewing_pubkeys, get_viewing_pubkeys_and_npkm_hash, extract_signature_64, extract_pubkeys_32, 
+        get_viewing_pubkeys, get_viewing_pubkeys_and_npkm_hash, extract_signature_64, extract_pubkeys_32, concat_u8_32,
         };
 
     #[aztec(storage)]
@@ -80,9 +80,9 @@ contract EcdsaP256Module {
         storage.public_keys.at(account).is_initialized()
     }
 
-    unconstrained fn view_public_keys(account: AztecAddress) -> pub ([u8;32], [u8;32]) {
+    unconstrained fn view_public_keys(account: AztecAddress) -> pub [u8;64] {
         let note = storage.public_keys.at(account).view_note();
-        (note.x, note.y)
+        concat_u8_32(note.x, note.y)
     }
 }
 

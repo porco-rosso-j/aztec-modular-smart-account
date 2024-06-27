@@ -2,12 +2,11 @@
 
 Aztec supports native Account Abstraction at the protocol level. Every account is a smart contract that can incorporate arbitrary signature validation logic and other extensible features. This MSA(modular smart account) example leverages it to implement a modular smart account where multiple different validation schemes can be flexibly added/removed to an account.
 
-This MSA, for example, allows users to create accounts that can customize signature validations. For example, users can set the ECDSA k256 module by default, add the ECDSA P256 module to sign transactions with a fingerprint on mobile and use the multi-sig module for social recovery. Anyone can develop a new validator module, install it into their accounts, and start using it right away.  
+The account contract called KernelAccount ( inspired by [ZeroDev](https://docs.zerodev.app/) ) doesn't implement any validation logic but can store multiple validator addresses that are called by the account contract during the validation phase. It sets one default validator at deployment, and nothing stops it from adding other custom validators to customize its authorization scheme.
 
-The KernelAccount contract itself doesn't implement validation logic, but stores validator addresses selectively called by the account contract for each transaction. Below are the supported modules. 
+For example, a user can set the ECDSA k256 module by default, add the ECDSA P256 module for signing transactions with a fingerprint on mobile, and also use the multi-sig module for social recovery. Also, it's possible to develop a new validator module, install it into their accounts, and start using it right away.  
 
-
-## Supported Validator module contracts
+## Validator module contracts
 
 | Validator           | Details                                    |
 | -----------------   | ------------------------------------------ |
@@ -16,3 +15,8 @@ The KernelAccount contract itself doesn't implement validation logic, but stores
 | SchnorrModule           |  Schnorr signature over Grumpkin curve |
 | EddsaBjjModule        |  EDDSA algorithm over Baby JubJUb curve |
 | MultisigSchnorrModule  | Mulitisg with Schnorr signature algorithm |
+
+## References
+- [ERC7579](https://erc7579.com/)
+- [ZeroDev](https://zerodev.app/)
+- [Rhinestone](https://www.rhinestone.wtf/)

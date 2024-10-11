@@ -1,3 +1,6 @@
 {
-  "kernel_account-KernelAccount.json": "83afbb2c3e167790fc99c73db095be1d8e45669d9c668ce4682fdd3f2f5e1f47"
+  "kernel_account-KernelAccount.json": {
+    "contractName": "KernelAccount",
+    "hash": "695356668fcd8b1f7a4f5884a0200c5bd45288b0729c16bb2a19aa3904cd7551"
+  }
 }

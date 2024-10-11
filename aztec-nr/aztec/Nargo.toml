@@ -1,8 +1,0 @@
-[package]
-name = "noir_aztec"
-authors = ["aztec-labs"]
-compiler_version = ">=0.18.0"
-type = "lib"
-
-[dependencies]
-protocol_types = { git = 'https://github.com/AztecProtocol/aztec-packages/', tag = 'aztec-packages-v0.42.0', directory = 'noir-projects/noir-protocol-circuits/crates/types' }

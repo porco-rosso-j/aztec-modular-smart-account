@@ -1,2 +1,2 @@
 mod session_account;
-mod approved_action_note;
+mod approved_action;

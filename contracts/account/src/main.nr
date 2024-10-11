@@ -1,167 +1,142 @@
-mod validator_note;
+use dep::aztec::macros::aztec;
+mod authenticator_note;
 
-global MAX_WITNESS_NOTE_LEN: Field = 500;
-global MODE_DEFAULT = 0;
-global MODE_CUSTOM = 1;
+// aztec codegen ./ -o ../../test/artifacts
 
+global MAX_WITNESS_LEN: u32 = 500;
+
+#[aztec]
 contract KernelAccount {
-    use dep::aztec::prelude::{AztecAddress, FunctionSelector, NoteHeader, NoteGetterOptions, Map, PrivateContext, PrivateMutable, SharedMutable};
-    use dep::value_note::value_note::ValueNote;
-    use dep::address_note::address_note::AddressNote;
-
-    use dep::aztec::protocol_types::abis::call_context::CallContext;
-    use dep::std;
+    use dep::aztec::{
+        prelude::{AztecAddress, FunctionSelector, NoteHeader, NoteGetterOptions, Map, PrivateContext, PrivateMutable, SharedMutable},
+        encrypted_logs::encrypted_note_emission::encode_and_encrypt_note_with_keys,
+        keys::getters::get_public_keys,
+        macros::{storage::storage, functions::{private, initializer, view, noinitcheck}},
+        oracle::debug_log::{debug_log, debug_log_format},
+    };
 
     use dep::authwit::{
         entrypoint::{app::AppPayload, fee::FeePayload}, account::AccountActions,
-        auth_witness::get_auth_witness
+        auth_witness::get_auth_witness,
     }; 
 
-    use dep::aztec::oracle::debug_log::{debug_log, debug_log_format};
-
-    use crate::validator_note::{ValidatorNote, INSTALL_KEYS_LEN};
-    use crate::{MAX_WITNESS_NOTE_LEN, MODE_DEFAULT, MODE_CUSTOM};
-    use dep::helper::{get_viewing_pubkeys, get_viewing_pubkeys_and_npkm_hash};
+    use dep::value_note::value_note::ValueNote;
+    use dep::address_note::address_note::AddressNote;
     
-    #[aztec(storage)]
-    struct Storage {
-        default_validator: PrivateMutable<AddressNote>,
-        validators: Map<AztecAddress, PrivateMutable<ValidatorNote>>,
-        nonce: PrivateMutable<ValueNote>,
-        // registry
+    use crate::authenticator_note::{AuthenticatorNote, INSTALL_KEYS_LEN};
+    use crate::{MAX_WITNESS_LEN};
+    
+    #[storage]
+    struct Storage<Context> {
+        authenticators: Map<AztecAddress, PrivateMutable<AuthenticatorNote, Context>, Context>,
+        nonce: PrivateMutable<ValueNote, Context>,
     }
 
-    global ACCOUNT_ACTIONS_STORAGE_SLOT = 4;
-
-    // Creates a new account out of an ECDSA public key to use for signature verification
-    #[aztec(private)]
-    #[aztec(initializer)]
-    fn constructor(default_validator: AztecAddress, signing_pubkeys:[Field; INSTALL_KEYS_LEN]) {
-        let header = context.get_header();
+    #[private]
+    #[initializer]
+    fn constructor(authenticator: AztecAddress, signing_pubkeys:[Field; INSTALL_KEYS_LEN]) {
         let this = context.this_address();
-        let (ovpk_m, ivpk_m, npk_m_hash) = get_viewing_pubkeys_and_npkm_hash(&mut context, this);
+        let this_keys = get_public_keys(this);
 
-        let mut nonce_note = ValueNote::new(0, npk_m_hash);
-        storage.nonce.initialize(&mut nonce_note, ovpk_m, ivpk_m);
-
-        let mut default_validator_note = AddressNote::new(default_validator, npk_m_hash);
-        storage.default_validator.initialize(&mut default_validator_note, ovpk_m, ivpk_m);
+        let mut nonce_note = ValueNote::new(0, this_keys.npk_m.hash());
+        storage.nonce.initialize(&mut nonce_note).emit(encode_and_encrypt_note_with_keys(&mut context, this_keys.ovpk_m, this_keys.ivpk_m, this));
         
-        let mut validator_note = ValidatorNote::new(default_validator, true, npk_m_hash);
-        storage.validators.at(default_validator).initialize(&mut validator_note, ovpk_m, ivpk_m);
-        validator_note.install(&mut context, signing_pubkeys);
+        let mut authenticator_note = AuthenticatorNote::new(authenticator, true, this_keys.npk_m.hash());
+        storage.authenticators.at(authenticator).initialize(&mut authenticator_note).emit(encode_and_encrypt_note_with_keys(&mut context, this_keys.ovpk_m, this_keys.ivpk_m, this));
+        authenticator_note.install(&mut context, signing_pubkeys);
     }
 
     // Note: If you globally change the entrypoint signature don't forget to update default_entrypoint.ts
-    #[aztec(private)]
-    fn entrypoint(app_payload: AppPayload, fee_payload: FeePayload) {
-        let actions = AccountActions::init(&mut context, ACCOUNT_ACTIONS_STORAGE_SLOT, is_valid_impl);
-        actions.entrypoint(app_payload, fee_payload);
+    #[private]
+    fn entrypoint(app_payload: AppPayload, fee_payload: FeePayload, cancellable: bool) {
+        // debug_log("entrypoint...");
+        dep::aztec::oracle::debug_log::debug_log("entrypoint...");
+        let actions = AccountActions::init(&mut context, is_valid_impl);
+        actions.entrypoint(app_payload, fee_payload, cancellable);
 
         // validate and increment nonce
-        context.call_private_function(
-            context.this_address(),
-            FunctionSelector::from_signature("_validate_and_update_nonce(Field)"), 
-            [app_payload.nonce]
-        );  
+        // context.call_private_function(
+        //     context.this_address(),
+        //     FunctionSelector::from_signature("_validate_and_update_nonce(Field)"), 
+        //     [app_payload.nonce]
+        // );  
     }
 
-    #[aztec(private)]
-    #[aztec(noinitcheck)]
-    fn spend_private_authwit(inner_hash: Field) -> Field {
-        let actions = AccountActions::init(&mut context, ACCOUNT_ACTIONS_STORAGE_SLOT, is_valid_impl);
-        actions.spend_private_authwit(inner_hash)
-    } 
-
-    #[aztec(public)]
-    fn spend_public_authwit(inner_hash: Field) -> Field {
-        let actions = AccountActions::init(&mut context, ACCOUNT_ACTIONS_STORAGE_SLOT, is_valid_impl);
-        actions.spend_public_authwit(inner_hash)
-    }
-
-    #[aztec(private)]
-    #[aztec(internal)]
-    fn cancel_authwit(outer_hash: Field) {
-        context.push_new_nullifier(outer_hash, 0);
-    }
-
-    #[aztec(public)]
-    #[aztec(internal)]
-    fn approve_public_authwit(outer_hash: Field) {
-        let actions = AccountActions::init(&mut context, ACCOUNT_ACTIONS_STORAGE_SLOT, is_valid_impl);
-        actions.approve_public_authwit(outer_hash)
+    #[private]
+    #[noinitcheck]
+    #[view]
+    fn verify_private_authwit(inner_hash: Field) -> Field {
+        let actions = AccountActions::init(&mut context, is_valid_impl);
+        actions.verify_private_authwit(inner_hash)
     }
 
     #[contract_library_method]
     fn is_valid_impl(context: &mut PrivateContext, outer_hash: Field) -> bool {
+        // debug_log("is_valid_impl...");
+         dep::aztec::oracle::debug_log::debug_log("is_valid_impl...");
         // Load public key from storage
         let storage = Storage::init(context);
-        let (ovpk_m, ivpk_m) = get_viewing_pubkeys(context, context.this_address());
 
         // Load auth witness
-        let witness: [Field; MAX_WITNESS_NOTE_LEN] = get_auth_witness(outer_hash);
-        let mode = witness[0]; // 0x00: default, 0x01: custom, 0x02: add a new validator
-        
-        let mut validator = ValidatorNote::empty();
+        let witness: [Field; MAX_WITNESS_LEN] = unsafe { get_auth_witness(outer_hash) };
+        debug_log_format("witness[0]: {}", [witness[0]]);
+        let authenticator_address = AztecAddress::from_field(witness[0]);
 
-        if mode == MODE_DEFAULT {
-            let default = storage.default_validator.get_note(ovpk_m, ivpk_m);
-            validator = storage.validators.at(default.address).get_note(ovpk_m, ivpk_m);
-
-        } else if mode == MODE_CUSTOM {
-           let validator_address = AztecAddress::from_field(witness[1]);
-            validator = storage.validators.at(validator_address).get_note(ovpk_m, ivpk_m);
-            assert(validator.enabled, "validator not installed");
-        } 
+        // Get authenticator note
+        let mut authenticator = storage.authenticators.at(authenticator_address).get_note().note;
+        debug_log_format("authenticator.address: {}", [authenticator.address.to_field()]);
+        debug_log_format("authenticator.enabled: {}", [authenticator.enabled.to_field()]);
+        assert(authenticator.enabled, "authenticator not installed");
 
         // TODO: add mode 0x02 (enable) to allow recovery
-        // this'd eliminate a waste of gas in deploying recovery validator beforehand.
+        // this'd eliminate a waste of gas in deploying recovery authenticator beforehand.
 
-        validator.validate(context, mode, outer_hash)
-        
+        authenticator.validate(context, outer_hash)
+        // true
     }
 
-    #[aztec(private)]
-    fn install_validator(validator_address: AztecAddress, signing_pubkeys:[Field; INSTALL_KEYS_LEN]) {
-        let (ovpk_m, ivpk_m, npk_m_hash) = get_viewing_pubkeys_and_npkm_hash(&mut context, context.this_address());
+    #[private]
+    fn install_authenticator(authenticator_address: AztecAddress, signing_pubkeys:[Field; INSTALL_KEYS_LEN]) {
+        let this = context.this_address();
+        let this_keys = get_public_keys(this);
 
-        let mut validator = ValidatorNote::new(validator_address, true, npk_m_hash);
-        storage.validators.at(validator_address).initialize(&mut validator, ovpk_m, ivpk_m);
-        validator.install(&mut context, signing_pubkeys);
+        let mut authenticator = AuthenticatorNote::new(authenticator_address, true, this_keys.npk_m.hash());
+        storage.authenticators.at(authenticator_address).initialize(&mut authenticator).emit(encode_and_encrypt_note_with_keys(&mut context, this_keys.ovpk_m, this_keys.ivpk_m, this));
+        authenticator.install(&mut context, signing_pubkeys);
     }
 
-    #[aztec(private)]
-    fn uninstall_validator(validator_address: AztecAddress) {
-        let (ovpk_m, ivpk_m, npk_m_hash) = get_viewing_pubkeys_and_npkm_hash(&mut context, context.this_address());
+    #[private]
+    fn uninstall_authenticator(authenticator_address: AztecAddress) {
+        let this = context.this_address();
+        let this_keys = get_public_keys(this);
+
+        let mut authenticator_note = storage.authenticators.at(authenticator_address).get_note().note;
         
-        let mut validator = ValidatorNote::empty();
-        storage.validators.at(validator_address).replace(&mut validator, ovpk_m, ivpk_m);
-        validator.uninstall(&mut context);
+        let mut new_authenticator_note = AuthenticatorNote::empty();
+        storage.authenticators.at(authenticator_address).replace(&mut new_authenticator_note).emit(encode_and_encrypt_note_with_keys(&mut context, this_keys.ovpk_m, this_keys.ivpk_m, this));
+        authenticator_note.uninstall(&mut context);
     }
 
     // Not sure if 2D nonce with mapping is necessary on Aztec
-    #[aztec(private)]
-    #[aztec(internal)]
+    #[private]
+    #[internal]
     fn _validate_and_update_nonce(nonce: Field) {
-        let (ovpk_m, ivpk_m) = get_viewing_pubkeys(&mut context, context.this_address());
+        let this = context.this_address();
+        let this_keys = get_public_keys(this);
 
-        let mut nonce_note = storage.nonce.get_note(ovpk_m, ivpk_m);
+        let mut nonce_note = storage.nonce.get_note().note;
         nonce_note.value = nonce_note.value + 1; 
         assert(nonce_note.value as u64 == nonce as u64, "invalid nonce");
        
-        storage.nonce.replace(&mut nonce_note, ovpk_m, ivpk_m);
+        storage.nonce.replace(&mut nonce_note).emit(encode_and_encrypt_note_with_keys(&mut context, this_keys.ovpk_m, this_keys.ivpk_m, this));
     }
 
     unconstrained fn get_nonce() -> pub Field {
         storage.nonce.view_note().value 
     }
 
-    unconstrained fn is_validator_installed(validator: AztecAddress) -> pub bool {
-        storage.validators.at(validator).view_note().enabled
-    }
-
-    unconstrained fn get_default_validator() -> pub Field {
-        storage.default_validator.view_note().address.to_field()
+    unconstrained fn is_authenticator_installed(authenticator: AztecAddress) -> pub bool {
+        storage.authenticators.at(authenticator).view_note().enabled
     }
 
 }

@@ -11,6 +11,6 @@
 		"forceConsistentCasingInFileNames": true,
 		"resolveJsonModule": true
 	},
-	"include": ["test", "artifacts", "aztec-contracts/**/*.json"],
+	"include": ["src", "test", "artifacts", "aztec-contracts/**/*.json"],
 	"exclude": ["node_modules"]
 }
